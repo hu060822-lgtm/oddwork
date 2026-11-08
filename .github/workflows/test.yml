@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Download Godot 4.3
         run: |
-          wget -q --tries=5 --waitretry=10 --retry-connrefused --retry-on-http-error=500,502,503,504 https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          curl -fsSL --retry 6 --retry-delay 20 --retry-all-errors -o Godot_v4.3-stable_linux.x86_64.zip https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
           unzip -q Godot_v4.3-stable_linux.x86_64.zip
           mv Godot_v4.3-stable_linux.x86_64 godot
           chmod +x godot
