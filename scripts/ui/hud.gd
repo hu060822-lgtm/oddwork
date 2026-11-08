@@ -10,6 +10,9 @@ var rules_box: VBoxContainer
 var rule_labels: Array[Label] = []
 var anomaly_label: Label
 var mutation_label: Label
+var combo_label: Label
+var incident_label: Label
+var clause_label: Label
 var warning_label: Label
 var mission_box: VBoxContainer
 var shift_label: Label
@@ -68,11 +71,17 @@ func setup(c: Node) -> void:
 	v.add_child(anomaly_label)
 	mutation_label = UiKit.wrap_label("", 16, Color(1, 0.5, 0.45), DEV_W)
 	v.add_child(mutation_label)
+	combo_label = UiKit.wrap_label("", 16, Color(0.6, 0.85, 1.0), DEV_W)
+	v.add_child(combo_label)
 	# --- top-center: mutation warning
 	warning_label = UiKit.label("", 30, Color(1, 0.3, 0.25), HORIZONTAL_ALIGNMENT_CENTER)
 	UiKit.anchor(warning_label, Vector2(0.5, 0), Vector2(-300, 90))
 	warning_label.custom_minimum_size = Vector2(600, 40)
 	add_child(warning_label)
+	incident_label = UiKit.label("", 22, Color(0.95, 0.85, 0.55), HORIZONTAL_ALIGNMENT_CENTER)
+	UiKit.anchor(incident_label, Vector2(0.5, 0), Vector2(-300, 56))
+	incident_label.custom_minimum_size = Vector2(600, 30)
+	add_child(incident_label)
 	# --- top-right: mission panel
 	var tr := UiKit.panel()
 	UiKit.anchor(tr, Vector2(1, 0), Vector2(-436, 16))
@@ -96,6 +105,8 @@ func setup(c: Node) -> void:
 	var pb := UiKit.bar(396, 6, UiKit.GREEN)
 	p_fill = pb[1]
 	mission_box.add_child(pb[0])
+	clause_label = UiKit.wrap_label("", 14, Color(0.85, 0.8, 0.65), 396)
+	mission_box.add_child(clause_label)
 	s_title = UiKit.label("", 14, UiKit.ACCENT)
 	mission_box.add_child(s_title)
 	s_text = UiKit.wrap_label("", 16, UiKit.DIM, 396)
@@ -251,6 +262,10 @@ func _process(delta: float) -> void:
 	anomaly_label.text = ("異常：" + ", ".join(an)) if an.size() > 0 else ""
 	var mt: Array[String] = ctx.mutations.active_text()
 	mutation_label.text = ("突變中：" + "；".join(mt)) if mt.size() > 0 else ""
+	var cn: Array[String] = ctx.combos.active_names()
+	var bh: float = ctx.combos.black_hole_progress()
+	combo_label.text = ("組合：" + "、".join(cn) + ("  黑洞 %d%%" % int(bh * 100.0) if bh > 0.0 else "")) if cn.size() > 0 else ""
+	incident_label.text = ctx.incidents.status_text()
 	var wt: String = ctx.mutations.warning_text()
 	warning_label.text = wt
 	warning_label.visible = wt != "" and fmod(GameClock.ms / 1000.0, 0.4) < 0.28
@@ -279,6 +294,9 @@ func _update_mission() -> void:
 		p_text.text = p.text
 		p_status.text = p.status_line()
 		p_fill.size.x = 396.0 * clampf(p.progress(), 0.0, 1.0)
+	var cls: Array[String] = ctx.clauses.lines()
+	clause_label.text = "\n".join(cls)
+	clause_label.visible = cls.size() > 0
 	var s = mm.secondary
 	s_title.visible = s != null
 	s_text.visible = s != null
@@ -301,6 +319,11 @@ func _status_text() -> String:
 		lines.append("【主要任務】%s\n  提示：%s" % [mm.primary.text, mm.primary.hint])
 	if mm.secondary:
 		lines.append("【加分任務】%s\n  提示：%s" % [mm.secondary.text, mm.secondary.hint])
+	var cls: Array[String] = ctx.clauses.lines()
+	if cls.size() > 0:
+		lines.append("【附加條款】不影響任務能否完成，但遵守會加創意分、違反會扣效率分")
+		for c in cls:
+			lines.append("  " + c)
 	lines.append("")
 	lines.append("【物理規則】按 Q 開選單，或直接按 1-5 循環切換")
 	for r in RuleDefs.COUNT:
@@ -310,7 +333,10 @@ func _status_text() -> String:
 		for d in ctx.anomalies.active:
 			lines.append("【異常】%s：%s" % [(d as AnomalyDef).title, (d as AnomalyDef).desc])
 	if ctx.anomalies.combos_found.size() > 0:
-		lines.append("【組合】" + ", ".join(ctx.anomalies.combos_found))
+		lines.append("【異常組合】" + ", ".join(ctx.anomalies.combos_found))
+	var rc: Array[String] = ctx.combos.active_names()
+	if rc.size() > 0:
+		lines.append("【物理組合生效中】" + "、".join(rc))
 	lines.append("")
 	lines.append("【房間觀察到的習慣】")
 	var obs: Array[String] = ctx.observer.summary_lines()

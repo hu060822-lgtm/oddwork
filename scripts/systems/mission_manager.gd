@@ -4,6 +4,9 @@ extends Node
 ## (ends the shift) and an optional secondary mission (bonus).
 
 const TIME_LIMIT := 150.0
+## Deviation needed for END OF THE WORLD. Room-driven chaos is soft-capped,
+## so this asks for several bent rules plus active play, not 100.
+const SURVIVE_DEV := 84.0
 const DELIVER_KINDS: Array[String] = ["cup", "apple", "ball", "box", "battery", "chair", "plate"]
 const PUSHABLE_KINDS: Array[String] = ["ball", "box", "apple", "battery", "cup"]
 const HIT_KINDS: Array[String] = ["ball", "box", "barrel", "battery", "plate"]
@@ -63,7 +66,7 @@ class Mission:
 			"BALANCE":
 				return "%.1f / %.0f 秒" % [hold_t, seconds]
 			"SURVIVE":
-				return "Deviation 達到 100" if phase == 0 else "存活 %.0f / %.0f 秒" % [hold_t, seconds]
+				return "Deviation 達到 %d（災難）" % int(MissionManager.SURVIVE_DEV) if phase == 0 else "存活 %.0f / %.0f 秒" % [hold_t, seconds]
 			"CHAIN_ACTIVATE":
 				return "需要 %d 段以上連鎖" % required
 		return ""
@@ -313,6 +316,7 @@ func _present(m: Mission) -> void:
 		lbl.pixel_size = 0.0011
 		lbl.modulate = col
 		lbl.outline_size = 8
+		lbl.font = UiKit.font()
 		(m.device as Node3D).add_child(lbl)
 		lbl.position = Vector3(0, 1.6, 0)
 		_markers.append(lbl)
@@ -328,6 +332,7 @@ func _attach_marker(m: Mission, col: Color) -> void:
 	lbl.pixel_size = 0.0011
 	lbl.modulate = col
 	lbl.outline_size = 8
+	lbl.font = UiKit.font()
 	lbl.top_level = true
 	m.target.add_child(lbl)
 	lbl.set_meta("follow", m.target)
@@ -480,9 +485,9 @@ func _update(m: Mission, dt: float) -> void:
 			if m.hold_t >= m.seconds:
 				_complete(m)
 		"SURVIVE":
-			if m.phase == 0 and ctx.deviation.value >= 98.0:
+			if m.phase == 0 and ctx.deviation.value >= SURVIVE_DEV:
 				m.phase = 1
-				ctx.events.notify.emit("DEVIATION 100！撐過 %d 秒！" % int(m.seconds), Color(1, 0.2, 0.4), true)
+				ctx.events.notify.emit("房間進入災難等級！撐過 %d 秒！" % int(m.seconds), Color(1, 0.2, 0.4), true)
 			elif m.phase == 1:
 				m.hold_t += dt
 				if m.hold_t >= m.seconds:

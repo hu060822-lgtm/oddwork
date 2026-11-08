@@ -44,6 +44,9 @@ static func defaults() -> Dictionary:
 		"last_personality": "",
 		"observer": {},
 		"settings": {"sensitivity": 1.0, "volume": 0.8},
+		"incident_counter": 830,
+		"last_incident": {},
+		"last_comments": [],
 	}
 
 

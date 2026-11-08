@@ -39,6 +39,18 @@ func _run() -> void:
 	main.pick_card(main.anomalies.get_def("RUBBER_WORLD"))
 	await fr(90)
 	await shot("03_play_start")
+	# The room remembers: TV replay of an old incident.
+	var tv: Prop = main.room.devices.get("tv")
+	if tv:
+		(tv as TvProp).show_message("重播 INCIDENT #00831\n「蘋果」離開了大樓", 30.0)
+		var front: Vector3 = tv.global_position + tv.global_basis.z.normalized() * 1.6
+		main.player.global_position = Vector3(front.x, tv.global_position.y - 1.0, front.z)
+		var to: Vector3 = tv.global_position - main.player.global_position
+		main.player.rotation.y = atan2(-to.x, -to.z)
+		main.player.head.rotation.x = -0.25
+		await fr(30)
+		await shot("11_tv_memory")
+		main.player.global_position = Vector3(0, 0.1, 3.0)
 	var real_primary = main.missions.primary
 	var d := MissionManager.Mission.new()
 	d.type = "SURVIVE"
@@ -80,8 +92,27 @@ func _run() -> void:
 	await fr(5)
 	await shot("09_status")
 	Input.action_release("status")
+	main.deviation.value = 30.0
+	main.deviation._check_tier()
+	# Inspector.
+	main.incidents._t_shift = 100.0
+	main.incidents.trigger("THE_INSPECTION")
+	var ip := IncidentManager.INSPECTOR_POS
+	pl.global_position = ip + Vector3(2.0, 0.1, -3.5)
+	var to2: Vector3 = ip + Vector3(0, 1.2, 0) - (pl.global_position + Vector3(0, 1.6, 0))
+	pl.rotation.y = atan2(-to2.x, -to2.z)
+	pl.head.rotation.x = 0.0
+	main.deviation.value = 88.0
+	await fr(40)
+	await shot("12_inspection")
+	main.deviation.value = 20.0
+	await fr(10)
 	main.missions.primary = real_primary
 	main.missions.force_complete_primary()
 	await fr(150)
 	await shot("10_shift_result")
+	main.stage = main.SHIFTS
+	main.continue_after_shift()
+	await fr(20)
+	await shot("13_run_report")
 	quit()

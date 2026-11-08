@@ -24,6 +24,15 @@ static func score_shift(s: Dictionary) -> Dictionary:
 	if done and not bool(s.get("target_grabbed", false)):
 		creativity += 18.0
 	creativity += minf(int(s.get("combos", 0)), 2) * 6.0
+	# Mission clauses: kept/met ones are creative, broken ones cost efficiency.
+	var cl: Dictionary = s.get("clauses", {})
+	creativity += int(cl.get("kept", 0)) * 7.0
+	if bool(cl.get("hidden", false)):
+		creativity += 10.0
+	eff = clampf(eff - int(cl.get("broken", 0)) * 6.0, 0.0, 100.0)
+	var insp := str((s.get("incidents", {}) as Dictionary).get("THE_INSPECTION", ""))
+	if insp == "fail":
+		eff = clampf(eff - 8.0, 0.0, 100.0)
 	creativity = clampf(creativity, 0.0, 100.0)
 	var chaos := float(s.get("peak_deviation", 0.0)) * 0.45
 	chaos += minf(int(s.get("mutations", 0)), 4) * 7.0
@@ -31,6 +40,8 @@ static func score_shift(s: Dictionary) -> Dictionary:
 	chaos += minf(int(s.get("chain_links", 0)), 30) * 0.6
 	chaos = clampf(chaos, 0.0, 100.0)
 	var completion := (70.0 if done else 0.0) + (30.0 if bool(s.get("secondary_done", false)) else 0.0)
+	if insp == "ok":
+		completion = minf(100.0, completion + 15.0)
 	var dims := {"efficiency": eff, "creativity": creativity, "chaos": chaos, "completion": completion}
 	var pts := 0.0
 	for k: String in WEIGHTS:

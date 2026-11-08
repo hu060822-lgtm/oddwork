@@ -73,6 +73,7 @@ func _pick_card_by_id(id: String) -> void:
 func _run() -> void:
 	print("MISRULE integration tests")
 	await _fresh_main()
+	main.incidents.enabled = false
 	await t_boot()
 	await t_data()
 	await t_mission_generation()
@@ -86,6 +87,9 @@ func _run() -> void:
 	await t_float_mission()
 	await t_mutation()
 	await t_observer()
+	await t_combos()
+	await t_clauses()
+	await t_incidents()
 	await t_full_run_and_save()
 	await t_save_corruption()
 	await t_soak_and_perf()
@@ -310,6 +314,14 @@ func t_chain_tracker() -> void:
 func t_real_chain_physics() -> void:
 	print("[physics chain]")
 	# A real collision: launch a ball at a box and see the tracker follow it.
+	# Clear the lane: earlier tests may have left props rolling around here.
+	for p in main.room.live_props():
+		var q := (p as Prop).global_position
+		if q.x > -2.0 and q.x < 2.5 and q.z > 3.2 and q.z < 5.4 and q.y < 1.5 and not (p is DeviceProp):
+			print("    moving %s out of the test lane" % (p as Prop).kind)
+			(p as Prop).global_position = Vector3(-5.5, 0.5, -3.5)
+			(p as Prop).linear_velocity = Vector3.ZERO
+	await frames(2)
 	var ball: Prop = main.room.spawn("ball", Transform3D(Basis.IDENTITY, Vector3(-0.8, 0.0, 4.2)))
 	var box: Prop = main.room.spawn("box", Transform3D(Basis.IDENTITY, Vector3(1.0, 0.0, 4.2)))
 	await frames(20)
@@ -421,6 +433,7 @@ func t_mutation() -> void:
 	await secs(2.4)
 	check(started.size() == 1, "mutation starts after warning", str(started))
 	check(mu.active.size() == 1, "mutation is active", str(mu.active.size()))
+	mu._cooldown = 999.0  # no second mutation from a later tier rise
 	var dur := float((mu.active[0]["def"] as Dictionary)["dur"])
 	await secs(dur + 0.6)
 	check(mu.active.size() == 0, "mutation ends and reverts")
@@ -429,6 +442,203 @@ func t_mutation() -> void:
 	main.events.mutation_started.disconnect(cb)
 	main.deviation.value = 0.0
 	main.deviation.tier = 0
+
+
+func _reset_rules() -> void:
+	for r in RuleDefs.COUNT:
+		main.rules.set_level(r, 0, false)
+
+
+func t_combos() -> void:
+	print("[physics combos]")
+	var cm: ComboManager = main.combos
+	cm.reset_shift()
+	main.mutations._cooldown = 999.0
+	_reset_rules()
+	await frames(5)
+	check(cm.active_names().is_empty(), "no combo with normal rules")
+	# PING PONG: anti-gravity + high bounce. Ceiling should send things back down.
+	main.rules.set_level(RuleDefs.GRAVITY, RuleDefs.GRAVITY_ANTI, false)
+	main.rules.set_level(RuleDefs.BOUNCE, RuleDefs.BOUNCE_HIGH, false)
+	var found := []
+	var cb := func(t: String) -> void: found.append(t)
+	main.events.codex_unlocked.connect(cb)
+	await secs(3.0)
+	check(cm.is_active("PING_PONG"), "ping-pong combo arms after holding")
+	check(found.has("THE LAUNDRY UNIVERSE"), "first activation is a discovery in the codex", str(found))
+	check(cm.activated_this_shift.has("PING_PONG"), "combo counted for this shift")
+	var ball: Prop = main.room.spawn("ball", Transform3D(Basis.IDENTITY, Vector3(0.5, Room.HEIGHT - 0.4, 3.0)))
+	ball.linear_velocity = Vector3.ZERO
+	await frames(4)
+	check(ball.linear_velocity.y < -3.0, "ceiling kicks props back down", "%.2f" % ball.linear_velocity.y)
+	ball.queue_free()
+	main.events.codex_unlocked.disconnect(cb)
+	# METAL SOUP: attract + slick -> tangential motion around the clump.
+	_reset_rules()
+	main.rules.set_level(RuleDefs.MAGNETISM, RuleDefs.MAG_ATTRACT, false)
+	main.rules.set_level(RuleDefs.FRICTION, RuleDefs.FRICTION_SLICK, false)
+	await secs(2.8)
+	check(cm.is_active("METAL_SOUP") and not cm.is_active("PING_PONG"), "metal soup replaces ping-pong", str(cm.active.keys()))
+	# GRAVITY IS OPTIONAL: low gravity + repel keeps things hovering.
+	_reset_rules()
+	main.rules.set_level(RuleDefs.GRAVITY, RuleDefs.GRAVITY_LOW, false)
+	main.rules.set_level(RuleDefs.MAGNETISM, RuleDefs.MAG_REPEL, false)
+	await secs(2.8)
+	var box: Prop = main.room.spawn("box", Transform3D(Basis.IDENTITY, Vector3(-1.0, 0.3, 3.5)))
+	await secs(2.0)
+	check(cm.is_active("GRAVITY_OPTIONAL") and box.global_position.y > 0.6, "hover combo lifts a box off the floor", "y %.2f" % box.global_position.y)
+	box.queue_free()
+	# BLACK HOLE: pulls toward the centre, then pops.
+	_reset_rules()
+	main.rules.set_level(RuleDefs.GRAVITY, RuleDefs.GRAVITY_LOW, false)
+	main.rules.set_level(RuleDefs.MAGNETISM, RuleDefs.MAG_ATTRACT, false)
+	main.rules.set_level(RuleDefs.TIME, RuleDefs.TIME_FAST, false)
+	await secs(2.8)
+	check(cm.is_active("BLACK_HOLE"), "black hole arms")
+	var apple: Prop = main.room.spawn("apple", Transform3D(Basis.IDENTITY, ComboManager.BH_CENTER + Vector3(3.5, 0.0, 0.0)))
+	# Measure the whole room: single props get knocked around by the swarm.
+	var near := func() -> float:
+		var sum := 0.0
+		var n := 0
+		for p in cm._movable():
+			var dd := (p as Prop).global_position.distance_to(ComboManager.BH_CENTER)
+			if dd < 7.0:
+				sum += dd
+				n += 1
+		return sum / maxf(1.0, float(n))
+	var d0: float = near.call()
+	await secs(1.5)
+	var d1: float = near.call()
+	check(d1 < d0 - 0.3, "black hole pulls props in (mean distance)", "%.2f -> %.2f" % [d0, d1])
+	cm._bh_t = ComboManager.BH_POP_TIME - 0.05
+	await frames(6)
+	check(cm._bh_cooldown > 0.0, "black hole pops after its timer")
+	apple.queue_free()
+	_reset_rules()
+	await frames(4)
+	check(cm.active.is_empty(), "combos stop when rules return to normal")
+	main.deviation.value = 0.0
+	main.deviation._check_tier()
+
+
+func t_clauses() -> void:
+	print("[mission clauses]")
+	var cl: ClauseManager = main.clauses
+	var mm: MissionManager = main.missions
+	# Generator never attaches a clause the mission type excludes.
+	var bad := 0
+	for i in 40:
+		var m := mm.generate(1 + i % 3, true, null)
+		var ids := cl.assign(m, 1 + i % 3)
+		for c in cl.list:
+			if not ClauseManager.fits(c["def"], m):
+				bad += 1
+		if m.type == "ANTIGRAV" and ids.has("NO_GRAVITY"):
+			bad += 1
+		if m.target == null and (ids.has("NO_GRAB_TARGET") or ids.has("VIA_CHAIN")):
+			bad += 1
+		mm._cleanup(m)
+	check(bad == 0, "clauses always fit their mission", "%d bad" % bad)
+	# Forbid clause breaks on the matching action.
+	var m2 := MissionManager.Mission.new()
+	m2.type = "COLLISIONS"
+	cl.clear()
+	cl.list.append({"def": ClauseData.clauses()[0], "state": "kept"})   # NO_GRAVITY
+	cl.list.append({"def": ClauseData.clauses()[1], "state": "kept"})   # NO_JUMP
+	cl.list.append({"def": ClauseData.clauses()[4], "state": "unmet"})  # THREE_RULES
+	main.stats["rules_used"] = {}
+	main.rules.request(RuleDefs.BOUNCE, RuleDefs.BOUNCE_HIGH)
+	await frames(2)
+	check(str(cl.list[0]["state"]) == "kept", "unrelated rule keeps the gravity clause")
+	main.rules.set_level(RuleDefs.GRAVITY, RuleDefs.GRAVITY_LOW, true)
+	await frames(2)
+	check(str(cl.list[0]["state"]) == "broken", "changing gravity breaks NO_GRAVITY", str(cl.list[0]["state"]))
+	main.events.player_jumped.emit()
+	check(str(cl.list[1]["state"]) == "broken", "jumping breaks NO_JUMP")
+	main.rules.set_level(RuleDefs.TIME, RuleDefs.TIME_SLOW, true)
+	await frames(2)
+	check(str(cl.list[2]["state"]) == "met", "three different rules meet THREE_RULES", str(main.stats.get("rules_used")))
+	var res := cl.finalize(true)
+	check(int(res["kept"]) == 1 and int(res["broken"]) == 2, "finalize counts clauses", str(res))
+	var base := {"primary_done": true, "time_used": 60.0, "time_limit": 150.0}
+	var with_good := base.duplicate()
+	with_good["clauses"] = {"kept": 2, "broken": 0, "hidden": true}
+	var with_bad := base.duplicate()
+	with_bad["clauses"] = {"kept": 0, "broken": 2, "hidden": false}
+	var g := ScoringManager.score_shift(with_good)
+	var b := ScoringManager.score_shift(with_bad)
+	check(float(g["creativity"]) > float(b["creativity"]) and float(g["efficiency"]) > float(b["efficiency"]), "kept clauses score better than broken ones")
+	_reset_rules()
+	cl.clear()
+
+
+func t_incidents() -> void:
+	print("[incidents]")
+	var im: IncidentManager = main.incidents
+	im.enabled = true
+	im.reset_shift()
+	im._t_shift = 100.0
+	var started := []
+	var cb := func(d: Dictionary) -> void: started.append(d["id"])
+	main.events.incident_started.connect(cb)
+	# Room service: stand still.
+	im.delivered = 0
+	im._idle_t = IncidentManager.IDLE_TIME + 0.1
+	await frames(3)
+	check(started.has("ROOM_SERVICE"), "standing still triggers room service", str(started))
+	check(im.delivered == 3, "room service delivers 3 props", str(im.delivered))
+	# Gap: a second incident is not allowed right away.
+	for i in IncidentManager.OUTAGE_DEVICES:
+		im._device_ms.append(GameClock.ms)
+	await frames(3)
+	check(not started.has("POWER_OUTAGE"), "incidents respect the gap between them")
+	im._since_last = 999.0
+	for i in IncidentManager.OUTAGE_DEVICES:
+		im._device_ms.append(GameClock.ms)
+	await frames(3)
+	check(started.has("POWER_OUTAGE") and main.fx.power_out, "many device activations cause an outage")
+	im._left = 0.01
+	await frames(3)
+	check(not main.fx.power_out, "power comes back after the outage")
+	# Shift cap: third incident in the same shift is refused.
+	im._since_last = 999.0
+	im._printer_uses = 3
+	await frames(3)
+	check(not started.has("DUPLICATION_ERROR"), "max incidents per shift is respected", str(started))
+	# Fresh shift: inspection.
+	im.reset_shift()
+	im._t_shift = 100.0
+	main.deviation.value = 90.0
+	main.deviation._check_tier()
+	await frames(3)
+	check(started.has("THE_INSPECTION") and im.active_id == "THE_INSPECTION", "catastrophic deviation calls the inspector")
+	check(is_instance_valid(im._inspector), "inspector is in the room")
+	main.deviation.value = 30.0
+	main.deviation._check_tier()
+	await frames(3)
+	check(str(im.results.get("THE_INSPECTION", "")) == "ok" and not is_instance_valid(im._inspector), "calming the room passes the inspection")
+	# Duplication on a fresh shift.
+	im.reset_shift()
+	im._t_shift = 100.0
+	im._printer_uses = 3
+	im.copies_made = 0
+	check(main.room.devices.has("printer"), "printer still exists for the duplication test")
+	await secs(3.5)
+	var copies := 0
+	var marked := 0
+	for p in main.room.live_props():
+		if (p as Prop).display_name.ends_with("（副本）"):
+			copies += 1
+			if (p as Prop).has_meta("no_respawn"):
+				marked += 1
+	check(started.has("DUPLICATION_ERROR") and im.copies_made == 3, "printer prints 3 copies", "%d made, %d still intact" % [im.copies_made, copies])
+	check(marked == copies, "copies are marked so they never respawn")
+	main.events.incident_started.disconnect(cb)
+	im.enabled = false
+	im.reset_shift()
+	main.deviation.value = 0.0
+	main.deviation._check_tier()
+	await frames(3)
 
 
 func t_observer() -> void:
@@ -472,6 +682,10 @@ func t_full_run_and_save() -> void:
 		main.continue_after_shift()
 		await frames(3)
 	check(main.state == main.State.RESULTS, "run ends with results")
+	var rep: Dictionary = main.last_report
+	check(int(rep.get("number", 0)) > 830 and str(rep.get("case", "")) != "", "incident report built", str(rep.get("case", "")))
+	check((rep.get("comments", []) as Array).size() >= 1, "report has supervisor comments", str(rep.get("comments", [])))
+	check(not (main.progression.data["last_incident"] as Dictionary).is_empty(), "last incident remembered for the TV")
 	check(int(main.progression.data["runs_completed"]) == 1, "run counted")
 	check((main.progression.unlocks() as Dictionary).has("runs_1"), "unlock after first run")
 	check(FileAccess.file_exists(SAVE), "save file written")

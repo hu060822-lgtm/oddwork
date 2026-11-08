@@ -20,5 +20,5 @@ static func all() -> Array[Dictionary]:
 		{"type": "BALANCE", "title": "STEADY HAND", "difficulty": 2, "stages": [1, 2, 3],
 			"text": "讓 %s 在 %s 上連續停留 %d 秒", "hint": "高摩擦、低彈性、或乾脆用磁性吸住。"},
 		{"type": "SURVIVE", "title": "END OF THE WORLD", "difficulty": 4, "stages": [3],
-			"text": "讓 Deviation 達到 100，然後撐過 %d 秒", "hint": "盡情製造混亂，但小心飛來的東西。"},
+			"text": "讓 Deviation 達到 84（災難等級），然後撐過 %d 秒", "hint": "同時扭曲多條規則並持續出手，房間自己亂只能撐到一半。"},
 	]

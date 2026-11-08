@@ -58,4 +58,5 @@ func _run() -> void:
 			print("t=%2ds  deviation %5.1f  tier %d  breaks %3d  chains %3d  best_depth %d  links %4d  mutations %d  state %d hp %d" % [sec + 1, main.deviation.value, main.deviation.tier, int(main.stats.get("breaks", 0)), int(main.stats.get("chains", 0)), int(main.stats.get("best_depth", 0)), main.chains.total_links, int(main.stats.get("mutations", 0)), main.state, int(pl.health)])
 	print("sources ", main.deviation.sources)
 	print("broken kinds ", broke)
+	print("incidents ", main.incidents.run_log, "  combos this shift ", main.combos.activated_this_shift)
 	quit()

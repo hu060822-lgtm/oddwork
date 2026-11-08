@@ -12,11 +12,21 @@ const GREEN := Color(0.24, 1.0, 0.42)
 const RED := Color(0.85, 0.22, 0.18)
 
 
+static var _font: SystemFont
+
+
+## Shared CJK-capable font (also for Label3D, which does not use the theme).
+static func font() -> SystemFont:
+	if _font == null:
+		_font = SystemFont.new()
+		_font.font_names = PackedStringArray(["Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "PingFang TC", "Microsoft YaHei", "sans-serif"])
+		_font.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
+	return _font
+
+
 static func make_theme() -> Theme:
 	var t := Theme.new()
-	var f := SystemFont.new()
-	f.font_names = PackedStringArray(["Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "PingFang TC", "Microsoft YaHei", "sans-serif"])
-	f.antialiasing = TextServer.FONT_ANTIALIASING_GRAY
+	var f := font()
 	t.default_font = f
 	t.default_font_size = 18
 	t.set_color("font_color", "Label", TEXT)
