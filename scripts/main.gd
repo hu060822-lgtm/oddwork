@@ -19,6 +19,9 @@ var anomalies: AnomalyManager
 var env_fx: EnvEffects
 var missions: MissionManager
 var observer: RoomObserver
+var combos: ComboManager
+var clauses: ClauseManager
+var incidents: IncidentManager
 var fx: FxManager
 var room: Room
 var player: PlayerController
@@ -32,6 +35,8 @@ var stats: Dictionary = {}
 var run_shifts: Array = []
 var run_totals: Dictionary = {}
 var run_codex_new: Array[String] = []
+var run_stats: Array[Dictionary] = []
+var last_report: Dictionary = {}
 var test_mode: bool = false
 var save_path: String = ""
 var _cards: Array[AnomalyDef] = []
@@ -83,6 +88,12 @@ func build() -> void:
 	_sys(fx, "Fx")
 	observer = RoomObserver.new()
 	_sys(observer, "Observer")
+	combos = ComboManager.new()
+	_sys(combos, "Combos")
+	clauses = ClauseManager.new()
+	_sys(clauses, "Clauses")
+	incidents = IncidentManager.new()
+	_sys(incidents, "Incidents")
 	audio.setup(self)
 	deviation.setup(self)
 	chains.setup(self)
@@ -96,6 +107,9 @@ func build() -> void:
 	_sys(player, "Player")
 	player.setup(self)
 	observer.setup(self)
+	combos.setup(self)
+	clauses.setup(self)
+	incidents.setup(self)
 	ui = UIManager.new()
 	ui.name = "UI"
 	add_child(ui)
@@ -147,11 +161,10 @@ func _connect_stats() -> void:
 	events.chain_finished.connect(_on_chain_finished)
 	events.mutation_started.connect(func(d: Dictionary) -> void:
 		stats_add("mutations", 1)
-		if progression.record("mutation:" + str(d["id"]), str(d["title"]), str(d["zh"])):
-			run_codex_new.append(str(d["title"])))
+		progression.record("mutation:" + str(d["id"]), str(d["title"]), str(d["zh"])))
 	events.deviation_tier_changed.connect(func(t: int, up: bool) -> void:
-		if up and t == 4 and progression.record_disaster("CATASTROPHIC"):
-			run_codex_new.append("CATASTROPHIC"))
+		if up and t == 4:
+			progression.record_disaster("CATASTROPHIC"))
 	events.mission_completed.connect(_on_mission_completed)
 	events.mission_failed.connect(_on_mission_failed)
 	events.player_damaged.connect(_on_player_damaged)
@@ -217,6 +230,9 @@ func _reset_world() -> void:
 	deviation.reset()
 	chains.reset_shift()
 	fx.reset()
+	combos.reset_shift()
+	incidents.reset_shift()
+	clauses.clear()
 	player.respawn()
 	player.pulse_power = 1.6 if progression.has_unlock("overcharged_pulse") else 1.0
 	ui.hud.clear_feed()
@@ -229,7 +245,10 @@ func start_run() -> void:
 	misruled = false
 	stage = 0
 	run_shifts.clear()
+	run_stats.clear()
 	run_codex_new.clear()
+	combos.reset_run()
+	incidents.reset_run()
 	run_totals = {"throws": 0, "pulses": 0, "grabs": 0, "breaks": 0, "rule_changes": 0, "rules_used": {}, "best_chain": 0, "mutations": 0, "cata_time": 0.0, "completed": 0, "indirect": 0, "efficiency": 0.0, "chaos": 0.0}
 	progression.data["runs_started"] = int(progression.data["runs_started"]) + 1
 	audio.play_ui("click", -4.0)
@@ -279,7 +298,11 @@ func begin_shift() -> void:
 	if stage > 1:
 		room.restock()
 	observer.begin_shift()
+	combos.reset_shift()
+	incidents.reset_shift()
 	missions.start_shift(stage)
+	clauses.assign(missions.primary, stage)
+	_room_remembers()
 	ui.screens.hide_all()
 	ui.set_hud_visible(true)
 	player.input_enabled = true
@@ -287,6 +310,26 @@ func begin_shift() -> void:
 	audio.start_ambience()
 	_end_pending = -1.0
 	events.notify.emit("SHIFT %d：%s" % [stage, missions.primary.text], UiKit.GREEN, true)
+
+
+## The room remembers: the TV replays an old incident at the start of a run,
+## and this run's previous shift afterwards.
+func _room_remembers() -> void:
+	var tv = room.devices.get("tv")
+	if tv == null or not is_instance_valid(tv):
+		return
+	var text := ""
+	if stage == 1:
+		var li: Dictionary = progression.data.get("last_incident", {})
+		if not li.is_empty():
+			text = "重播 INCIDENT #%05d\n%s" % [int(li["number"]), str(li.get("case_zh", li.get("case", "")))]
+	elif run_stats.size() > 0:
+		var prev: Dictionary = run_stats[run_stats.size() - 1]
+		var bc := str(prev.get("best_chain_text", ""))
+		if bc != "":
+			text = "上一班次：\n" + (bc if bc.length() <= 40 else bc.substr(0, 38) + "…")
+	if text != "":
+		(tv as TvProp).show_message(text, 16.0)
 
 
 func _on_mission_completed(m: RefCounted) -> void:
@@ -334,6 +377,9 @@ func _on_rule_changed(rule: int, level: int, by_player: bool) -> void:
 	if not by_player or state != State.PLAYING:
 		return
 	stats_add("rule_changes", 1)
+	var rc: Dictionary = stats.get("rule_counts", {})
+	rc[rule] = int(rc.get(rule, 0)) + 1
+	stats["rule_counts"] = rc
 	if level != 0:
 		(stats["rules_used"] as Dictionary)[rule] = true
 
@@ -345,6 +391,9 @@ func _on_prop_broken(p: Node, _cid: int) -> void:
 		return
 	stats_add("breaks", 1)
 	if state == State.PLAYING:
+		var bk: Dictionary = stats.get("broken_kinds", {})
+		bk[pr.kind] = int(bk.get(pr.kind, 0)) + 1
+		stats["broken_kinds"] = bk
 		progression.data["total_breaks"] = int(progression.data["total_breaks"]) + 1
 
 
@@ -376,7 +425,12 @@ func _end_shift() -> void:
 	stats["time_used"] = p.completed_at if p and p.state == "done" else MissionManager.TIME_LIMIT
 	stats["target_grabbed"] = p.target_grabbed if p else true
 	stats["peak_deviation"] = deviation.peak
-	stats["combos"] = anomalies.combos_found.size()
+	stats["combos"] = anomalies.combos_found.size() + combos.activated_this_shift.size()
+	stats["combo_names"] = combos.activated_this_shift.duplicate()
+	incidents.end_shift()
+	stats["incidents"] = incidents.results.duplicate()
+	var cl := clauses.finalize(bool(stats["primary_done"]))
+	stats["clauses"] = cl
 	var dims := ScoringManager.score_shift(stats)
 	if bool(stats["primary_done"]) and bool(stats["secondary_done"]):
 		progression.record_disaster("PERFECT_SHIFT")
@@ -388,6 +442,7 @@ func _end_shift() -> void:
 			all_glass = false
 	if all_glass:
 		progression.record_disaster("GLASS_HOUSE")
+	run_stats.append(stats.duplicate(true))
 	run_shifts.append({"done": stats["primary_done"], "points": dims["points"], "efficiency": dims["efficiency"], "creativity": dims["creativity"], "chaos": dims["chaos"], "completion": dims["completion"]})
 	var t := run_totals
 	for k in ["throws", "pulses", "grabs", "breaks", "rule_changes", "mutations"]:
@@ -441,10 +496,13 @@ func finish_run() -> void:
 	pc[pers["title"]] = int(pc.get(pers["title"], 0)) + 1
 	d["last_personality"] = pers["title"]
 	var unl := progression.evaluate_unlocks()
+	last_report = IncidentReport.build(self, points, grade, pers)
+	d["incident_counter"] = int(last_report["number"])
+	d["last_incident"] = {"number": last_report["number"], "case": last_report["case"], "case_zh": last_report["case_zh"], "summary": last_report["summary"]}
 	var ok := progression.save()
 	if not ok:
 		events.notify.emit("存檔失敗：%s" % progression.saver.last_error, UiKit.RED, true)
-	ui.screens.show_run_result({"points": points, "grade": grade, "personality": pers, "shifts": run_shifts, "unlocks": unl, "codex": run_codex_new, "misruled": misruled})
+	ui.screens.show_run_result({"points": points, "grade": grade, "personality": pers, "shifts": run_shifts, "unlocks": unl, "codex": run_codex_new, "misruled": misruled, "report": last_report})
 	_set_mouse(false)
 
 

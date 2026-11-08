@@ -134,6 +134,7 @@ func _physics_process(delta: float) -> void:
 			_logical_vel.y = JUMP * clampf(1.0 / sqrt(gravity_mult), 0.75, 1.9)
 			if ctx:
 				ctx.audio.play_ui("jump", -14.0)
+				ctx.events.player_jumped.emit()
 	else:
 		_logical_vel.y -= BASE_GRAVITY * gravity_mult * real_dt
 	_logical_vel.y = maxf(_logical_vel.y, -30.0)

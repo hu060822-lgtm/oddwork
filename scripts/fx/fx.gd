@@ -31,6 +31,7 @@ var _rings: Array = []
 var _sparks: Array[CPUParticles3D] = []
 var _spark_i: int = 0
 var _lights_wrong: bool = false
+var power_out: bool = false
 var _flicker_t: float = 0.0
 var _line_t: float = 0.0
 var _tint_target: Color = Color(0, 0, 0, 0)
@@ -112,6 +113,7 @@ func setup(c: Node) -> void:
 
 func reset() -> void:
 	_lights_wrong = false
+	set_power_out(false)
 	_pair_lines.clear()
 	_apply_lights(1.0, Color(0.95, 1.0, 0.88))
 	on_rules_changed([0, 0, 0, 0, 0])
@@ -159,11 +161,24 @@ func set_pair_lines(l: Array) -> void:
 	_pair_lines = l
 
 
+## Power outage: ceiling lights and panels off, only a dim emergency glow.
+func set_power_out(v: bool) -> void:
+	power_out = v
+	if ctx == null or ctx.room == null:
+		return
+	if v:
+		_apply_lights(0.0, Color(1.0, 0.3, 0.25))
+		ctx.room.env.ambient_light_energy = 0.12
+	else:
+		ctx.room.env.ambient_light_energy = 0.42
+		_apply_lights(1.0, Color(0.95, 1.0, 0.88))
+
+
 func set_lights_wrong(v: bool) -> void:
 	if v == _lights_wrong:
 		return
 	_lights_wrong = v
-	if not v:
+	if not v and not power_out:
 		_apply_lights(1.0, Color(0.95, 1.0, 0.88))
 
 
@@ -245,7 +260,9 @@ func _process(delta: float) -> void:
 			_rings.remove_at(i)
 	# Lights: wrong-lights mutation and deviation-driven flicker.
 	_flicker_t -= real_dt
-	if _lights_wrong:
+	if power_out:
+		pass
+	elif _lights_wrong:
 		if _flicker_t <= 0.0:
 			_flicker_t = randf_range(0.05, 0.3)
 			_apply_lights(randf_range(0.1, 1.2), Color(1.0, randf_range(0.2, 0.5), 0.3))
@@ -253,7 +270,7 @@ func _process(delta: float) -> void:
 		_flicker_t = randf_range(0.6, 2.5) / tier
 		_apply_lights(randf_range(0.3, 0.7), Color(0.95, 1.0, 0.88))
 		get_tree().create_timer(0.08, true, false, true).timeout.connect(func() -> void:
-			if not _lights_wrong:
+			if not _lights_wrong and not power_out:
 				_apply_lights(1.0, Color(0.95, 1.0, 0.88)))
 	# Magnet + pair lines (rebuilt 12x per second, jittered to read as arcs).
 	_line_t -= real_dt

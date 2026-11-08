@@ -472,7 +472,7 @@ func on_prop_broken(p: Prop) -> void:
 	if mi and mi.material_override is StandardMaterial3D:
 		c = (mi.material_override as StandardMaterial3D).albedo_color
 	spawn_debris(p.global_position + Vector3(0, 0.2, 0), c, 5 if p.mass < 3.0 else 8)
-	if p.kind != "paper" and p.kind != "ceiling" and not p.is_debris:
+	if p.kind != "paper" and p.kind != "ceiling" and not p.is_debris and not p.has_meta("no_respawn"):
 		_respawn_queue.append([p.kind, p.home, 20.0])
 
 

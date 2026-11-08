@@ -176,6 +176,23 @@ func show_shift_result(stage: int, s: Dictionary, dims: Dictionary, last: bool) 
 	inner.add_child(UiKit.wrap_label(facts, 15, UiKit.DIM, 560))
 	if str(s.get("best_chain_text", "")) != "":
 		inner.add_child(UiKit.wrap_label("最佳連鎖：" + str(s["best_chain_text"]), 15, UiKit.ACCENT, 560))
+	var cl: Dictionary = s.get("clauses", {})
+	if not cl.is_empty():
+		for line in cl.get("lines", []):
+			var good := str(line).begins_with("✓") or str(line).begins_with("○") or str(line).begins_with("★")
+			inner.add_child(UiKit.wrap_label(str(line), 15, UiKit.GREEN if good else UiKit.DIM, 560))
+	var cn: Array = s.get("combo_names", [])
+	if cn.size() > 0:
+		var names: Array[String] = []
+		for id in cn:
+			names.append(str(ctx.combos.def_of(str(id)).get("zh", id)))
+		inner.add_child(UiKit.wrap_label("物理組合：" + "、".join(names), 15, Color(0.7, 0.9, 1.0), 560))
+	var inc: Dictionary = s.get("incidents", {})
+	if inc.size() > 0:
+		var iz: Array[String] = []
+		for id: String in inc:
+			iz.append(str(IncidentData.get_def(id).get("zh", id)) + {"ok": "", "fail": "（未通過）", "": ""}.get(str(inc[id]), ""))
+		inner.add_child(UiKit.wrap_label("特殊事故：" + "、".join(iz), 15, Color(0.95, 0.85, 0.55), 560))
 	var b := UiKit.button("查看總結" if last else "下一班次", ctx.continue_after_shift, 22, 300)
 	v.add_child(b)
 	b.call_deferred("grab_focus")
@@ -201,14 +218,21 @@ func show_run_result(r: Dictionary) -> void:
 	var pers: Dictionary = r["personality"]
 	v.add_child(UiKit.label("混亂人格：%s" % str(pers["title"]), 28, Color(1.0, 0.5, 0.4), HORIZONTAL_ALIGNMENT_CENTER))
 	v.add_child(UiKit.label(str(pers["desc"]), 18, UiKit.DIM, HORIZONTAL_ALIGNMENT_CENTER))
+	var cols := UiKit.hbox(18)
+	cols.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_child(cols)
 	var p := UiKit.panel(UiKit.BG_SOLID)
-	v.add_child(p)
+	cols.add_child(p)
 	var inner := UiKit.vbox(6)
+	inner.custom_minimum_size.x = 640
 	p.add_child(inner)
+	var rep: Dictionary = r.get("report", {})
+	if not rep.is_empty():
+		cols.add_child(_report_panel(rep))
 	var shifts: Array = r["shifts"]
 	for i in shifts.size():
 		var sh: Dictionary = shifts[i]
-		inner.add_child(UiKit.label("SHIFT %d  %s  %d 分  · 效率 %d / 創意 %d / 混亂 %d / 完成 %d" % [i + 1, "✓" if bool(sh["done"]) else "✗", int(sh["points"]), int(sh["efficiency"]), int(sh["creativity"]), int(sh["chaos"]), int(sh["completion"])], 16, UiKit.TEXT))
+		inner.add_child(UiKit.wrap_label("SHIFT %d  %s  %d 分  · 效率 %d / 創意 %d / 混亂 %d / 完成 %d" % [i + 1, "✓" if bool(sh["done"]) else "✗", int(sh["points"]), int(sh["efficiency"]), int(sh["creativity"]), int(sh["chaos"]), int(sh["completion"])], 16, UiKit.TEXT, 620))
 	var unl: Array = r.get("unlocks", [])
 	if unl.size() > 0:
 		inner.add_child(UiKit.label(" ", 6))
@@ -217,7 +241,7 @@ func show_run_result(r: Dictionary) -> void:
 			inner.add_child(UiKit.label("  ✦ " + str(u), 17, UiKit.GREEN))
 	var cod: Array = r.get("codex", [])
 	if cod.size() > 0:
-		inner.add_child(UiKit.label("圖鑑新增：" + "、".join(PackedStringArray(cod)), 16, Color(0.7, 0.9, 1.0)))
+		inner.add_child(UiKit.wrap_label("圖鑑新增：" + "、".join(PackedStringArray(cod)), 16, Color(0.7, 0.9, 1.0), 620))
 	var row := UiKit.hbox(16)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(row)
@@ -225,6 +249,34 @@ func show_run_result(r: Dictionary) -> void:
 	row.add_child(again)
 	row.add_child(UiKit.button("主選單", ctx.quit_to_menu, 20, 200))
 	again.call_deferred("grab_focus")
+
+
+## The Department of Normality's incident report, styled as an old memo.
+func _report_panel(rep: Dictionary) -> Control:
+	var ink := Color(0.16, 0.14, 0.11)
+	var paper := UiKit.panel(Color(0.86, 0.83, 0.72), Color(0.45, 0.4, 0.3))
+	var col := UiKit.vbox(5)
+	col.custom_minimum_size.x = 520
+	paper.add_child(col)
+	var add := func(text: String, size: int, color: Color, wrap: bool = true) -> Label:
+		var l := UiKit.wrap_label(text, size, color, 500) if wrap else UiKit.label(text, size, color)
+		l.add_theme_constant_override("outline_size", 0)
+		col.add_child(l)
+		return l
+	add.call("DEPARTMENT OF NORMALITY · 正常事務部", 15, Color(0.4, 0.35, 0.28))
+	add.call("INCIDENT #%05d" % int(rep["number"]), 26, ink)
+	add.call(str(rep["case"]), 17, ink)
+	add.call("案件名稱：%s" % str(rep["case_zh"]), 17, ink)
+	add.call("事故摘要：%s" % str(rep["summary"]), 15, ink)
+	for line in rep["lines"]:
+		add.call("· " + str(line), 15, ink)
+	add.call("主管評語：", 16, Color(0.55, 0.12, 0.1))
+	for c in rep["comments"]:
+		add.call(str(c), 16, Color(0.55, 0.12, 0.1))
+	var stamp: Label = add.call("【%s】" % str(rep["stamp"]), 34, Color(0.75, 0.12, 0.1, 0.85), false)
+	stamp.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	stamp.rotation_degrees = -6.0
+	return paper
 
 
 # ---------------------------------------------------------------- codex
@@ -266,6 +318,25 @@ func show_codex() -> void:
 	for c in AnomalyData.combos():
 		var id3 := "combo:" + str(c["name"])
 		inner.add_child(UiKit.label(("  ■ %s（%s）" % [str(c["name"]), str(c["zh"])]) if codex.has(id3) else "  □ ？？？", 17, UiKit.TEXT if codex.has(id3) else UiKit.DIM))
+	inner.add_child(UiKit.label("物理組合發現", 22, Color(0.6, 0.85, 1.0)))
+	for cd in ComboData.all():
+		var id4 := "rcombo:" + str(cd["id"])
+		if codex.has(id4):
+			inner.add_child(UiKit.wrap_label("  ■ %s（%s）— %s" % [str(cd["title"]), str(cd["zh"]), str(cd["desc"])], 17, UiKit.TEXT, 860))
+		else:
+			inner.add_child(UiKit.label("  □ ？？？（%d 條規則的組合）" % (cd["needs"] as Dictionary).size(), 17, UiKit.DIM))
+	inner.add_child(UiKit.label("特殊事故", 22, Color(0.95, 0.85, 0.55)))
+	for idf in IncidentData.all():
+		var id5 := "incident:" + str(idf["id"])
+		if codex.has(id5):
+			inner.add_child(UiKit.wrap_label("  ■ %s（%s）— %s（%d 次）" % [str(idf["title"]), str(idf["zh"]), str(idf["desc"]), int(codex[id5]["count"])], 17, UiKit.TEXT, 860))
+		else:
+			inner.add_child(UiKit.label("  □ ？？？", 17, UiKit.DIM))
+	var li: Dictionary = prog.data.get("last_incident", {})
+	if not li.is_empty():
+		inner.add_child(UiKit.label("最近的事故報告", 22, UiKit.ACCENT))
+		inner.add_child(UiKit.wrap_label("  INCIDENT #%05d · %s（%s）" % [int(li["number"]), str(li.get("case", "")), str(li.get("case_zh", ""))], 17, UiKit.TEXT, 860))
+		inner.add_child(UiKit.wrap_label("  " + str(li.get("summary", "")), 15, UiKit.DIM, 860))
 	inner.add_child(UiKit.label("最佳連鎖反應", 22, UiKit.GREEN))
 	var hall: Array = prog.data["chains_hall"]
 	if hall.is_empty():

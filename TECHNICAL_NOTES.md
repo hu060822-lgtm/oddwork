@@ -108,6 +108,29 @@ All sounds are generated at startup into `AudioStreamWAV` (noise bursts, sine/sq
 FM clicks, a looping hum and drone). There are pooled 3D players for impacts and UI players for
 interface sounds; `play_rule(rule)` gives each rule its own cue.
 
+## Expansion systems (0.2.0)
+
+- **ComboManager** (`scripts/systems/combo_manager.gd`, data in `scripts/data/combo_data.gd`): each combo lists
+  the rule levels it needs. A combo counts as active once it has held for 2.5 s; effects run in
+  `_physics_process` every 2nd tick on `_movable()` props (not held, ≤60 kg, not paper, not frozen).
+  Discovery is stored as codex `rcombo:<ID>`. The `combo:` prefix is already used by anomaly-card combos.
+  First activation in a shift adds 4 Deviation (outside the soft cap) and opens an environmental chain.
+- **ClauseManager**: clauses are `forbid` (start kept, can break) or `require` (start unmet).
+  `ClauseManager.fits()` filters by `excl_types` and `needs_target`. Clauses never gate mission
+  completion; `finalize()` feeds `ScoringManager` (+7 creativity per kept or met clause, +10 for the hidden one,
+  −6 efficiency per broken clause). A forbid clause only counts as kept if the primary mission was done.
+- **IncidentManager**: deterministic triggers (idle time, device activations in 12 s, printer uses,
+  time spent at tier ≥ 3, Deviation ≥ 82). Rules: at most 2 per shift (the inspection is exempt),
+  30 s apart, none in the first 15 s, each at most once per shift. `enabled` lets tests turn
+  automatic triggers off. Spawned props carry the `no_respawn` meta so the room does not respawn them.
+- **IncidentReport**: built by a static function from `main.run_stats` (a full copy of each shift's stats).
+  Comment and case pools are filtered by flags. The comment indices used last time are saved in
+  `last_comments` so the next report avoids them. `last_incident` feeds the TV replay.
+- **Save keys added:** `incident_counter`, `last_incident`, `last_comments`. Old saves get them
+  through `SaveManager._merge` (defaults first, loaded values on top).
+- **Fonts:** `UiKit.font()` is a shared SystemFont. Label3D does not use the UI theme, so every
+  Label3D sets `font` explicitly.
+
 ## Testing
 
 ```
@@ -115,7 +138,7 @@ godot --headless --path . --import
 godot --headless --path . --fixed-fps 60 -s res://tests/run_tests.gd
 ```
 
-`tests/run_tests.gd` (127 checks) runs against the real main scene. Headless output includes
+`tests/run_tests.gd` (160 checks) runs against the real main scene. Headless output includes
 harmless `mesh_get_surface_count` errors and an "ObjectDB leaked" warning from the dummy renderer.
 
 `tools/balance_probe.gd -- <CARD_ID> [verbose] [casual] [magnet] [idle]` simulates 90 s of play

@@ -8,6 +8,8 @@ var eye: Node3D
 var loop: AudioStreamPlayer3D
 var screen_mat: StandardMaterial3D
 var _eye_t: float = 0.0
+var _msg_t: float = 0.0
+var _msg: Label3D
 var _flick: float = 0.0
 
 
@@ -44,6 +46,8 @@ func _apply_state() -> void:
 
 
 func show_eye(seconds: float) -> void:
+	if _msg_t > 0.0:
+		return
 	_eye_t = seconds
 	if eye:
 		eye.visible = true
@@ -52,8 +56,42 @@ func show_eye(seconds: float) -> void:
 	screen_mat.emission_energy_multiplier = 1.8
 
 
+## The room remembers: the screen shows a short text (an old incident) for a while.
+func show_message(text: String, seconds: float) -> void:
+	if _msg == null:
+		_msg = Label3D.new()
+		_msg.font = UiKit.font()
+		_msg.font_size = 44
+		_msg.pixel_size = 0.0008
+		_msg.width = 540.0
+		_msg.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_msg.modulate = Color(0.75, 1.0, 0.7)
+		_msg.outline_size = 0
+		_msg.position = Vector3(0, 0.27, 0.268)
+		visual.add_child(_msg)
+	_msg.text = text
+	_msg.visible = true
+	_eye_t = 0.0
+	if eye:
+		eye.visible = false
+	_msg_t = seconds
+	screen_mat.albedo_color = Color(0.03, 0.08, 0.04)
+	screen_mat.emission = Color(0.05, 0.25, 0.08)
+	screen_mat.emission_energy_multiplier = 0.8
+
+
+func showing_message() -> bool:
+	return _msg_t > 0.0
+
+
 func _process(delta: float) -> void:
 	super(delta)
+	if _msg_t > 0.0:
+		_msg_t -= delta
+		if _msg_t <= 0.0:
+			_msg.visible = false
+			_apply_state()
+		return
 	if _eye_t > 0.0:
 		_eye_t -= delta
 		if eye:
